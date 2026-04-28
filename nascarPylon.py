@@ -1,5 +1,5 @@
 # Importing required libraries
-from rgbmatrix import RBGMatrix, RGBMatrixOptions, graphics
+from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 import requests
 import time
 
