@@ -36,7 +36,7 @@ def get_data():
         return response.json()
     except Exception as e:
         print("Error fetching data:", e)
-        return home
+        
     
 # DRAW FUNCTION. MAIN DISPLAY LOGIC
 
