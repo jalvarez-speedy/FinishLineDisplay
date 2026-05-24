@@ -6,14 +6,18 @@ import time
 # CONFIGURATION SECTION OF CODE
 
 # NASCAR live data endpoint
-URL = "https://cf.nascar.com/cacher/live/leaderboard.json"
+API_KEY = "gjGTrXqctthrcZtfI0Z7DjjvAofErymvwWRbB5AC"
+SERIES = "mc"       #mc = CUP Series | nx = XFINITY | ct = TRUCK
+
+SCHEDULE_URL  = f"https://api.sportradar.com/nascar-ot3/{SERIES}/2026/races/schedule.json?api_key={API_KEY}"
+LEADERBOARD_URL = "https://api.sportradar.com/nascar-ot3/{SERIES}/races/{RACE_ID}/leaderboard.json?api_key={API_KEY}"
 
 # Setup LED matrix options
 options = RGBMatrixOptions()
 options.rows = 32               # Each LED screen is 32 pixels tall
 options.cols = 64               # Each LED screen is 64 pixels wide
 options.chain_length = 5        # I'm chaining 5 LED screens vertically
-options.parrallel = 1 
+options.parallel = 1 
 options.hardware_mapping = 'adafruit-hat'
 options.brightness = 40         # Limits the brightness to reduce the power used
 
@@ -26,16 +30,33 @@ font.LoadFont("fonts/6x10.bdf")
 
 # DATA FETCHING FUNCTION
 
-def get_data():
+def get_live_race_id():
     """
-    Fetch live NASCAR data from API.
-    Returns JSON data or None if request fails.
+    Finds the race ID for the currently live (in-progress) race.
+    Returns a race ID string, or None if no race is live.
     """
     try:
-        response = requests.get(URL, timeout=5)
+        response = requests.get(SCHEDULE_URL, timeout=5)
+        data = response.json()
+        for race in data.get("races", []):
+            if race.get("status") == "inprogress":
+                return race["id"]
+    except Exception as e:
+        print("Error fetching schedule:", e)
+    return None
+
+def get_leaderboard(race_id):
+    """
+    Fetches live leaderboard data for a given race ID.
+    Returns parsed JSON or None on failure.
+    """
+    try:
+        url = LEADERBOARD_URL.format(SERIES=SERIES, RACE_ID=race_id, API_KEY=API_KEY)
+        response = requests.get(url, timeout=5)
         return response.json()
     except Exception as e:
-        print("Error fetching data:", e)
+        print("Error fetching leaderboard:", e)
+    return None    
         
     
 # DRAW FUNCTION. MAIN DISPLAY LOGIC
@@ -44,16 +65,18 @@ def draw_display(data):
     """
     Draws all content onto the LED panels:
     - Top panel: laps completed / laps remaining
-    - Next panels: top 4 drivers
+    - Panels 2.5: top 4 drivers
     """
 
     # Prevents flickering
     canvas = matrix.CreateFrameCanvas()
+    
+    race = data.get("race", {})
 
-    #  TOP LED SCREEN - LAB INFO
+    #  TOP LED SCREEN - LAP INFO
     try:
-        laps_completed = data["laps_completed"]
-        laps_total = data["laps_total"]
+        laps_completed = race["laps_completed"]
+        laps_total = race["laps_total"]
         laps_left = laps_total - laps_completed
 
         #Display lap info
@@ -63,23 +86,24 @@ def draw_display(data):
         graphics.DrawText(canvas, font, 2, 24, graphics.Color(255,255,0),
                           f"TO GO {laps_left}")
         
-    except:
+    except Exception as e:
         # If data missing, show fallback
+        print("Error drawing lap info:", e)
         graphics.DrawText(canvas, font, 2, 16, graphics.Color(255,0,0),
                           "NO DATA")
 
     # LED SCREENS 2 to 5 - TOP 4 DRIVERS
-    drivers = data.get("leaderboard", [])
+    # Sportradar returns results pre-sorted by running position
+    drivers = race.get("results", [])
 
     for i in range(4):      # Top 4 Drivers
         if i >= len(drivers):
             break
 
-        driver = drivers[i]
-
-        position = driver.get("position", "?")
-        car = driver.get("car_number", "??")
-        name = driver.get("driver_name", "UNKNOWN")
+        driver      = drivers[i]
+        position    = driver.get("position", "?")
+        car         = driver.get("vehicle", {}).get("number", "??")
+        name        = driver.get("driver", {}).get("full_name", "UNKNOWN")
 
         # Each LED screen is 32 pixels tall, offset by screen number
         y_offset = (i + 1) * 32
@@ -96,23 +120,41 @@ def draw_display(data):
 
     # display frame
     matrix.SwapOnVSync(canvas)
+    
+def draw_waiting(message="WAITING"):
+    """Shown on screen when no live race is found."""
+    canvas = matrix.CreateFrameCanvas()
+    graphics.DrawText(canvas, font, 2, 20, graphics.Color(255, 100, 0), message)
+    matrix.SwapOnVSync(canvas)    
 
 # MAIN LOOP
 def main():
-    """
-    Main loop:
-    - Fetch data every second
-    - Update display
-    """
+    race_id = None
+    race_id_refresh_timer = 0
 
     while True:
-        data = get_data()
+        now = time.time()
 
-        if data:
-            draw_display(data)
+        # Re-check for a live race ID every 60 seconds
+        # (avoids hammering the schedule endpoint)
+        if race_id is None or (now - race_id_refresh_timer) > 60:
+            race_id = get_live_race_id()
+            race_id_refresh_timer = now
 
-        time.sleep(1)   # Refresh rate
+        if race_id:
+            data = get_leaderboard(race_id)
+            if data:
+                draw_display(data)
+            else:
+                draw_waiting("NO DATA")
+        else:
+            draw_waiting("NO RACE")
 
-# Run the program
+        time.sleep(1)
+
+
 if __name__ == "__main__":
-    main()                              
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nStopped.")                     
