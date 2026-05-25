@@ -10,8 +10,7 @@ API_KEY = "gjGTrXqctthrcZtfI0Z7DjjvAofErymvwWRbB5AC"
 SERIES = "mc"       #mc = CUP Series | nx = XFINITY | ct = TRUCK
 
 SCHEDULE_URL  = f"https://api.sportradar.com/nascar-ot3/{SERIES}/2026/races/schedule.json?api_key={API_KEY}"
-LEADERBOARD_URL = "https://api.sportradar.com/nascar-ot3/{SERIES}/races/{RACE_ID}/leaderboard.json?api_key={API_KEY}"
-
+LEADERBOARD_URL = "https://api.sportradar.com/nascar-ot3/{SERIES}/races/{RACE_ID}/results.json?api_key={API_KEY}"
 # Setup LED matrix options
 options = RGBMatrixOptions()
 options.rows = 32               # Each LED screen is 32 pixels tall
@@ -38,9 +37,10 @@ def get_live_race_id():
     try:
         response = requests.get(SCHEDULE_URL, timeout=5)
         data = response.json()
-        for race in data.get("races", []):
-            if race.get("status") == "inprogress":
-                return race["id"]
+        for event in data.get("events", []):          # loop through events first
+            for race in event.get("races", []):        # then races inside each event
+                if race.get("status") == "inprogress":
+                    return race["id"]
     except Exception as e:
         print("Error fetching schedule:", e)
     return None
@@ -56,8 +56,7 @@ def get_leaderboard(race_id):
         return response.json()
     except Exception as e:
         print("Error fetching leaderboard:", e)
-    return None    
-        
+    return None
     
 # DRAW FUNCTION. MAIN DISPLAY LOGIC
 
@@ -67,58 +66,44 @@ def draw_display(data):
     - Top panel: laps completed / laps remaining
     - Panels 2.5: top 4 drivers
     """
-
-    # Prevents flickering
     canvas = matrix.CreateFrameCanvas()
-    
-    race = data.get("race", {})
 
-    #  TOP LED SCREEN - LAP INFO
+    # TOP PANEL — LAP INFO
     try:
-        laps_completed = race["laps_completed"]
-        laps_total = race["laps_total"]
+        results = data.get("results", [])
+        laps_completed = results[0]["laps_completed"]   # leader's lap count = current lap
+        laps_total = data.get("race", {}).get("laps", 400)  # total laps from race info
         laps_left = laps_total - laps_completed
 
-        #Display lap info
-        graphics.DrawText(canvas, font, 2, 12, graphics.Color(0,255,0),
-                          f"LAP {laps_completed}/{laps_total}"),
-
-        graphics.DrawText(canvas, font, 2, 24, graphics.Color(255,255,0),
+        graphics.DrawText(canvas, font, 2, 12, graphics.Color(0, 255, 0),
+                          f"LAP {laps_completed}/{laps_total}")
+        graphics.DrawText(canvas, font, 2, 24, graphics.Color(255, 255, 0),
                           f"TO GO {laps_left}")
-        
     except Exception as e:
-        # If data missing, show fallback
         print("Error drawing lap info:", e)
-        graphics.DrawText(canvas, font, 2, 16, graphics.Color(255,0,0),
-                          "NO DATA")
+        graphics.DrawText(canvas, font, 2, 16, graphics.Color(255, 0, 0), "NO DATA")
 
-    # LED SCREENS 2 to 5 - TOP 4 DRIVERS
-    # Sportradar returns results pre-sorted by running position
-    drivers = race.get("results", [])
+    # PANELS 2–5 — TOP 4 DRIVERS
+    drivers = data.get("results", [])
 
-    for i in range(4):      # Top 4 Drivers
+    for i in range(4):
         if i >= len(drivers):
             break
 
-        driver      = drivers[i]
-        position    = driver.get("position", "?")
-        car         = driver.get("vehicle", {}).get("number", "??")
-        name        = driver.get("driver", {}).get("full_name", "UNKNOWN")
+        driver   = drivers[i]
+        position = driver.get("position", "?")
+        car      = driver.get("car", {}).get("number", "??")
+        name     = driver.get("driver", {}).get("full_name", "UNKNOWN")
 
-        # Each LED screen is 32 pixels tall, offset by screen number
         y_offset = (i + 1) * 32
 
-        # Draw position and car number
-        graphics.DrawText(canvas, font, 2, y_offset + 12, 
-                          graphics.Color(255,255,255),
+        graphics.DrawText(canvas, font, 2, y_offset + 12,
+                          graphics.Color(255, 255, 255),
                           f"{position:>2} #{car}")
-
-        # Draw shortened driver name
         graphics.DrawText(canvas, font, 2, y_offset + 24,
-                          graphics.Color(0,200,255),
-                          name[:8])  #should limit the length to fit screen
+                          graphics.Color(0, 200, 255),
+                          name[:8])
 
-    # display frame
     matrix.SwapOnVSync(canvas)
     
 def draw_waiting(message="WAITING"):
@@ -150,11 +135,11 @@ def main():
         else:
             draw_waiting("NO RACE")
 
-        time.sleep(1)
+        time.sleep(2)
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nStopped.")                     
+        print("\nStopped.")                    
