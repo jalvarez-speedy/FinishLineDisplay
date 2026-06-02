@@ -1,4 +1,4 @@
-# FinishLineDisplay 🏁
+# FinishLineDisplay
 
 A live NASCAR race pylon display powered by a Raspberry Pi 4 and five 64x32 HUB75 RGB LED panels. Fetches real-time race data from the Sportradar NASCAR OT v3 API and displays lap info and the top 3 drivers on a chained LED matrix.
 
@@ -167,7 +167,7 @@ A mock `rgbmatrix.py` file can be placed in the project folder to simulate the d
 **To use mock mode:** Place `rgbmatrix.py` in the project root.  
 **To use real hardware:** Delete `rgbmatrix.py` so the real library takes over.
 
-> ⚠️ Never deploy to real hardware with the mock file present.
+Never deploy to real hardware with the mock file present.
 
 ---
 
