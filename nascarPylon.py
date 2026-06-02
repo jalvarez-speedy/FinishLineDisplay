@@ -2,6 +2,9 @@
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 import requests
 import time
+import os
+
+os.environ['REQUESTS_CA_BUNDLE'] = '/etc/ssl/certs/ca-certificates.crt'
 
 # CONFIGURATION SECTION OF CODE
 
@@ -15,10 +18,12 @@ LEADERBOARD_URL = "https://api.sportradar.com/nascar-ot3/{SERIES}/races/{RACE_ID
 options = RGBMatrixOptions()
 options.rows = 32               # Each LED screen is 32 pixels tall
 options.cols = 64               # Each LED screen is 64 pixels wide
-options.chain_length = 5        # I'm chaining 5 LED screens vertically
+options.chain_length = 4        # I'm chaining 4 LED screens vertically
 options.parallel = 1 
 options.hardware_mapping = 'adafruit-hat'
 options.brightness = 40         # Limits the brightness to reduce the power used
+options.gpio_slowdown = 4
+
 
 # Initialize matrix controller
 matrix = RGBMatrix(options=options)
@@ -61,32 +66,24 @@ def get_leaderboard(race_id):
 # DRAW FUNCTION. MAIN DISPLAY LOGIC
 
 def draw_display(data):
-    """
-    Draws all content onto the LED panels:
-    - Top panel: laps completed / laps remaining
-    - Panels 2.5: top 4 drivers
-    """
     canvas = matrix.CreateFrameCanvas()
 
-    # TOP PANEL — LAP INFO
     try:
         results = data.get("results", [])
-        laps_completed = results[0]["laps_completed"]   # leader's lap count = current lap
-        laps_total = data.get("race", {}).get("laps", 400)  # total laps from race info
+        laps_completed = results[0]["laps_completed"]
+        laps_total = data.get("race", {}).get("laps", 400)
         laps_left = laps_total - laps_completed
 
-        graphics.DrawText(canvas, font, 2, 12, graphics.Color(0, 255, 0),
+        graphics.DrawText(canvas, font, 194, 12, graphics.Color(0, 255, 0),
                           f"LAP {laps_completed}/{laps_total}")
-        graphics.DrawText(canvas, font, 2, 24, graphics.Color(255, 255, 0),
+        graphics.DrawText(canvas, font, 194, 24, graphics.Color(255, 255, 0),
                           f"TO GO {laps_left}")
     except Exception as e:
         print("Error drawing lap info:", e)
-        graphics.DrawText(canvas, font, 2, 16, graphics.Color(255, 0, 0), "NO DATA")
 
-    # PANELS 2–5 — TOP 4 DRIVERS
     drivers = data.get("results", [])
 
-    for i in range(4):
+    for i in range(3):
         if i >= len(drivers):
             break
 
@@ -95,12 +92,12 @@ def draw_display(data):
         car      = driver.get("car", {}).get("number", "??")
         name     = driver.get("driver", {}).get("full_name", "UNKNOWN")
 
-        y_offset = (i + 1) * 32
+        x_offset = (options.chain_length - 2 - i) * 64  # panel 3, 2, 1 for drivers 1, 2, 3
 
-        graphics.DrawText(canvas, font, 2, y_offset + 12,
+        graphics.DrawText(canvas, font, x_offset + 2, 12,
                           graphics.Color(255, 255, 255),
                           f"{position:>2} #{car}")
-        graphics.DrawText(canvas, font, 2, y_offset + 24,
+        graphics.DrawText(canvas, font, x_offset + 2, 24,
                           graphics.Color(0, 200, 255),
                           name[:8])
 
