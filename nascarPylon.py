@@ -4,6 +4,7 @@ import requests
 import time
 import os
 
+# Fixes SSL certificate error when running with sudo on the Pi
 os.environ['REQUESTS_CA_BUNDLE'] = '/etc/ssl/certs/ca-certificates.crt'
 
 # CONFIGURATION SECTION OF CODE
@@ -19,10 +20,10 @@ options = RGBMatrixOptions()
 options.rows = 32               # Each LED screen is 32 pixels tall
 options.cols = 64               # Each LED screen is 64 pixels wide
 options.chain_length = 4        # I'm chaining 4 LED screens vertically
-options.parallel = 1 
+options.parallel = 1            # Only one set of chained panels
 options.hardware_mapping = 'adafruit-hat'
 options.brightness = 40         # Limits the brightness to reduce the power used
-options.gpio_slowdown = 4
+options.gpio_slowdown = 4       # Suppose to help with flickering
 
 
 # Initialize matrix controller
@@ -42,10 +43,10 @@ def get_live_race_id():
     try:
         response = requests.get(SCHEDULE_URL, timeout=5)
         data = response.json()
-        for event in data.get("events", []):          # loop through events first
-            for race in event.get("races", []):        # then races inside each event
+        for event in data.get("events", []):            # loop through events first
+            for race in event.get("races", []):         # then races inside each event
                 if race.get("status") == "inprogress":
-                    return race["id"]
+                    return race["id"]                   # return the live race ID
     except Exception as e:
         print("Error fetching schedule:", e)
     return None
@@ -63,15 +64,16 @@ def get_leaderboard(race_id):
         print("Error fetching leaderboard:", e)
     return None
     
-# DRAW FUNCTION. MAIN DISPLAY LOGIC
+# DISPLAY LOGIC AND FUNCTION
 
 def draw_display(data):
     canvas = matrix.CreateFrameCanvas()
 
+     # PANEL 1 - LAP INFO (x=194 puts it on the leftmost panel)
     try:
         results = data.get("results", [])
-        laps_completed = results[0]["laps_completed"]
-        laps_total = data.get("race", {}).get("laps", 400)
+        laps_completed = results[0]["laps_completed"]           # leader's lap = current race lap
+        laps_total = data.get("race", {}).get("laps", 400)      # total laps in the race
         laps_left = laps_total - laps_completed
 
         graphics.DrawText(canvas, font, 194, 12, graphics.Color(0, 255, 0),
@@ -81,6 +83,7 @@ def draw_display(data):
     except Exception as e:
         print("Error drawing lap info:", e)
 
+    # PANELS 2-4 - TOP 3 DRIVERS
     drivers = data.get("results", [])
 
     for i in range(3):
@@ -91,6 +94,8 @@ def draw_display(data):
         position = driver.get("position", "?")
         car      = driver.get("car", {}).get("number", "??")
         name     = driver.get("driver", {}).get("full_name", "UNKNOWN")
+        
+        # Each panel is 64px wide; this places drivers on panels 2, 3, 4 left to right
 
         x_offset = (options.chain_length - 2 - i) * 64  # panel 3, 2, 1 for drivers 1, 2, 3
 
@@ -99,7 +104,7 @@ def draw_display(data):
                           f"{position:>2} #{car}")
         graphics.DrawText(canvas, font, x_offset + 2, 24,
                           graphics.Color(0, 200, 255),
-                          name[:8])
+                          name[:8])                     # limit to 8 characters to fit the panel
 
     matrix.SwapOnVSync(canvas)
     
@@ -124,15 +129,16 @@ def main():
             race_id_refresh_timer = now
 
         if race_id:
+            # Race is live - fetch and display the leaderboard
             data = get_leaderboard(race_id)
             if data:
                 draw_display(data)
             else:
                 draw_waiting("NO DATA")
         else:
-            draw_waiting("NO RACE")
+            draw_waiting("NO RACE")            # No race currently live
 
-        time.sleep(2)
+        time.sleep(2)                          # Wait 2 seconds before next update (keeps us under API rate limits)
 
 
 if __name__ == "__main__":
